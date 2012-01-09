@@ -1,1 +1,3 @@
-document.getElementById("#{h2id}").innerHTML = "<i>Added from JavaScript.</i>";
+$(function() {
+  $("##{h2id}").html("<i>Added from jQuery.</i>");
+});
