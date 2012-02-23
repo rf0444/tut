@@ -1,4 +1,8 @@
 <h1>Welcome to #{userIdent self}'s home page
+$if not $ null errMsgs
+  <ul
+    $forall errMsg <- errMsgs
+      <li>#{errMsg}
 <h3>#{userIdent self}'s profile
 <form method=post action=@{HomeR uid}
   ^{form}
@@ -6,7 +10,6 @@
 
 <h3>#{userIdent self}'s friends
 <ul
-  $forall friend <- friends
-    $with fid <- fst friend, f <- snd friend
-      <li
-        <a href=@{HomeR fid}>#{userIdent f}
+  $forall (fid, f) <- friends
+    <li
+      <a href=@{HomeR fid}>#{userIdent f}

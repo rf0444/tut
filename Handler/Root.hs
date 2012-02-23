@@ -30,19 +30,24 @@ data UserForm = UserForm {
 userForm :: Maybe User -> Form UserForm
 userForm u = renderDivs $ UserForm
   <$> areq sexField "sex" (userSex <$> u)
-  <*> areq intField "age" (userAge <$> u)
-  <*> areq textareaField "memo" (textarea . userMemo <$> u)
+  <*> areq ageField "age" (userAge <$> u)
+  <*> areq memoField "memo" (textarea . userMemo <$> u)
  where
   sexField = selectField sexSelect
   sexSelect :: [(Text, Sex)]
   sexSelect = map (T.pack . show &&& id) sexs
+  ageField = checkBool (>= 0) ("年齢は0以上を入力してください。" :: Text) intField
+  memoField = checkBool ((<= 10) . length . T.unpack . unTextarea) ("メモは10文字以内にしてください。" :: Text) textareaField
   textarea text = Textarea { unTextarea = text }
 
 sexs :: [Sex]
 sexs = [minBound..maxBound]
 
 getHomeR :: UserId -> Handler RepHtml
-getHomeR uid = do
+getHomeR uid = getHomeR' uid []
+
+getHomeR' :: UserId -> [Text] -> Handler RepHtml
+getHomeR' uid errMsgs = do
   (self, friends) <- runDB $ do
     me <- get404 uid
     fs <- selectList [UserId !=. uid] [Asc UserIdent]
@@ -56,19 +61,14 @@ getHomeR uid = do
 
 postHomeR :: UserId -> Handler RepHtml
 postHomeR uid = do
-  ((result, _), _) <- runFormPost $ userForm Nothing
+  ((result, form), _) <- runFormPost $ userForm Nothing
   case result of
-    FormSuccess form -> do
+    FormSuccess uf -> do
       _ <- runDB $ do
-	    update uid [UserSex =. userFormSex form, UserAge =. userFormAge form, UserMemo =. (unTextarea . userFormMemo) form]
+        update uid [UserSex =. userFormSex uf, UserAge =. userFormAge uf, UserMemo =. (unTextarea . userFormMemo) uf]
       getHomeR uid
-    -- TODO: えー・・・
     FormMissing -> do
-      _ <- runDB $ do
-	    update uid [UserMemo =. "missing"]
-      getHomeR uid
+      getHomeR' uid [("missing" :: Text)]
     FormFailure texts -> do
-      _ <- runDB $ do
-	    update uid [UserMemo =. T.unlines texts]
-      getHomeR uid
+      getHomeR' uid texts
 
