@@ -63,4 +63,4 @@
 
 
 # Heroku configuration that runs your app
-web: ./dist/build/tut/tut -p $PORT
+web: ./dist/build/tut/tut production -p $PORT

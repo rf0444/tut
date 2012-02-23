@@ -3,7 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Foundation
     ( Tut (..)
-    , TutRoute (..)
+    , Route (..)
     , TutMessage (..)
     , resourcesTut
     , Handler
@@ -11,35 +11,36 @@ module Foundation
     , Form
     , maybeAuth
     , requireAuth
-    , module Yesod
     , module Settings
     , module Model
-    , StaticRoute (..)
-    , AuthRoute (..)
     ) where
 
 import Prelude
-import Yesod hiding (Form)
-import Yesod.Static (Static, base64md5, StaticRoute(..))
+import Yesod
+import Yesod.Static
 import Settings.StaticFiles
 import Yesod.Auth
 import Yesod.Auth.OpenId
 import Yesod.Default.Config
 import Yesod.Default.Util (addStaticContentExternal)
-import Yesod.Logger (Logger, logLazyText)
+import Yesod.Logger (Logger, logMsg, formatLogText)
+import Network.HTTP.Conduit (Manager)
+#ifdef DEVELOPMENT
+import Yesod.Logger (logLazyText)
+#endif
 import qualified Settings
 import qualified Data.ByteString.Lazy as L
-import qualified Database.Persist.Base
+import qualified Database.Persist.Store
 import Database.Persist.GenericSql
-import Settings (widgetFile)
+import Settings (widgetFile, Extra (..))
 import Model
 import Text.Jasmine (minifym)
 import Web.ClientSession (getKey)
 import Text.Hamlet (hamletFile)
-#if PRODUCTION
-import Network.Mail.Mime (sendmail)
-#else
+#if DEVELOPMENT
 import qualified Data.Text.Lazy.Encoding
+#else
+import Network.Mail.Mime (sendmail)
 #endif
 
 -- | The site argument for your application. This can be a good place to
@@ -47,10 +48,12 @@ import qualified Data.Text.Lazy.Encoding
 -- starts running, such as database connections. Every handler will have
 -- access to the data present here.
 data Tut = Tut
-    { settings :: AppConfig DefaultEnv
+    { settings :: AppConfig DefaultEnv Extra
     , getLogger :: Logger
     , getStatic :: Static -- ^ Settings for static file serving.
-    , connPool :: Database.Persist.Base.PersistConfigPool Settings.PersistConfig -- ^ Database connection pool.
+    , connPool :: Database.Persist.Store.PersistConfigPool Settings.PersistConfig -- ^ Database connection pool.
+    , httpManager :: Manager
+    , persistConfig :: Settings.PersistConfig
     }
 
 -- Set up i18n messages. See the message folder.
@@ -82,12 +85,13 @@ type Form x = Html -> MForm Tut Tut (FormResult x, Widget)
 -- Please see the documentation for the Yesod typeclass. There are a number
 -- of settings which can be configured by overriding methods here.
 instance Yesod Tut where
-    approot = appRoot . settings
+    approot = ApprootMaster $ appRoot . settings
 
     -- Place the session key file in the config folder
     encryptKey _ = fmap Just $ getKey "config/client_session_key.aes"
 
     defaultLayout widget = do
+        master <- getYesod
         mmsg <- getMessage
 
         -- We break up the default layout into two components:
@@ -111,7 +115,7 @@ instance Yesod Tut where
     authRoute _ = Just $ AuthR LoginR
 
     messageLogger y loc level msg =
-      formatLogMessage loc level msg >>= logLazyText (getLogger y)
+      formatLogText (getLogger y) loc level msg >>= logMsg (getLogger y)
 
     -- This function creates static content files in the static folder
     -- and names them based on a hash of their content. This allows
@@ -125,8 +129,12 @@ instance Yesod Tut where
 -- How to run database actions.
 instance YesodPersist Tut where
     type YesodPersistBackend Tut = SqlPersist
-    runDB f = liftIOHandler
-            $ fmap connPool getYesod >>= Database.Persist.Base.runPool (undefined :: Settings.PersistConfig) f
+    runDB f = do
+        master <- getYesod
+        Database.Persist.Store.runPool
+            (persistConfig master)
+            f
+            (connPool master)
 
 instance YesodAuth Tut where
     type AuthId Tut = UserId
@@ -139,19 +147,21 @@ instance YesodAuth Tut where
     getAuthId creds = runDB $ do
         x <- getBy $ UniqueUser $ credsIdent creds
         case x of
-            Just (uid, _) -> return $ Just uid
+            Just (Entity uid _) -> return $ Just uid
             Nothing -> do
                 fmap Just $ insert $ User (credsIdent creds) Nothing None 0 ""
 
     -- You can add other plugins like BrowserID, email or OAuth here
-    authPlugins = [authOpenId]
+    authPlugins _ = [authOpenId]
+
+    authHttpManager = httpManager
 
 -- Sends off your mail. Requires sendmail in production!
 deliver :: Tut -> L.ByteString -> IO ()
-#ifdef PRODUCTION
-deliver _ = sendmail
-#else
+#ifdef DEVELOPMENT
 deliver y = logLazyText (getLogger y) . Data.Text.Lazy.Encoding.decodeUtf8
+#else
+deliver _ = sendmail
 #endif
 
 -- This instance is required to use forms. You can modify renderMessage to

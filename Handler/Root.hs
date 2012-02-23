@@ -33,7 +33,7 @@ userForm u = renderDivs $ UserForm
   <*> areq ageField "age" (userAge <$> u)
   <*> areq memoField "memo" (textarea . userMemo <$> u)
  where
-  sexField = selectField sexSelect
+  sexField = selectFieldList sexSelect
   sexSelect :: [(Text, Sex)]
   sexSelect = map (T.pack . show &&& id) sexs
   ageField = checkBool (>= 0) ("年齢は0以上を入力してください。" :: Text) intField
@@ -51,7 +51,7 @@ getHomeR' uid errMsgs = do
   (self, friends) <- runDB $ do
     me <- get404 uid
     fs <- selectList [UserId !=. uid] [Asc UserIdent]
-    return (me, fs)
+    return (me, map (entityKey &&& entityVal) fs)
   --let sexIs s = s == userSex self
   -- TODO: form デザイン調整
   ((_, form), _) <- generateFormPost $ userForm $ Just self
