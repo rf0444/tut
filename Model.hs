@@ -1,6 +1,3 @@
-{-# LANGUAGE TemplateHaskell, QuasiQuotes, TypeFamilies, GADTs #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE OverloadedStrings #-}
 module Model where
 
 import Prelude

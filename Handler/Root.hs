@@ -1,5 +1,4 @@
-{-# LANGUAGE TemplateHaskell, QuasiQuotes #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections, OverloadedStrings #-}
 module Handler.Root where
 
 import Import
@@ -54,7 +53,7 @@ getHomeR' uid errMsgs = do
     return (me, map (entityKey &&& entityVal) fs)
   --let sexIs s = s == userSex self
   -- TODO: form デザイン調整
-  ((_, form), _) <- generateFormPost $ userForm $ Just self
+  (form, _) <- generateFormPost $ userForm $ Just self
   defaultLayout $ do
     setTitle "user home"
     $(widgetFile "userhome")

@@ -1,5 +1,3 @@
-{-# LANGUAGE TemplateHaskell, MultiParamTypeClasses #-}
-{-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Application
     ( getApplication
@@ -8,7 +6,6 @@ module Application
 
 import Import
 import Settings
-import Settings.StaticFiles (staticSite)
 import Yesod.Auth
 import Yesod.Default.Config
 import Yesod.Default.Main
@@ -38,14 +35,7 @@ mkYesodDispatch "Tut" resourcesTut
 -- migrations handled by Yesod.
 getApplication :: AppConfig DefaultEnv Extra -> Logger -> IO Application
 getApplication conf logger = do
-    manager <- newManager def
-    s <- staticSite
-    dbconf <- withYamlEnvironment "config/sqlite.yml" (appEnv conf)
-              Database.Persist.Store.loadConfig >>=
-              Database.Persist.Store.applyEnv
-    p <- Database.Persist.Store.createPoolConfig (dbconf :: Settings.PersistConfig)
-    Database.Persist.Store.runPool dbconf (runMigration migrateAll) p
-    let foundation = Tut conf setLogger s p manager dbconf
+    foundation <- makeFoundation conf setLogger
     app <- toWaiAppPlain foundation
     return $ logWare app
   where
@@ -56,6 +46,17 @@ getApplication conf logger = do
     setLogger = toProduction logger -- by default the logger is set for development
     logWare = logCallback (logBS setLogger)
 #endif
+
+makeFoundation :: AppConfig DefaultEnv Extra -> Logger -> IO Tut
+makeFoundation conf setLogger = do
+    manager <- newManager def
+    s <- staticSite
+    dbconf <- withYamlEnvironment "config/sqlite.yml" (appEnv conf)
+              Database.Persist.Store.loadConfig >>=
+              Database.Persist.Store.applyEnv
+    p <- Database.Persist.Store.createPoolConfig (dbconf :: Settings.PersistConfig)
+    Database.Persist.Store.runPool dbconf (runMigration migrateAll) p
+    return $ Tut conf setLogger s p manager dbconf
 
 -- for yesod devel
 getApplicationDev :: IO (Int, Application)
